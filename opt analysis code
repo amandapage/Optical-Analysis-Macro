@@ -1,0 +1,1442 @@
+Public IL, RL As String
+Dim exitAll As Boolean
+Dim glbl1310, glbl1490, glbl1550, glbl1625, glbl850, glbl1300 As Boolean
+Dim glblMF As Boolean
+Dim colCount As Integer
+Dim serial_tries As Long
+Dim fibers As Long
+
+
+Sub Report()
+
+    'Set Optimization settings
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableAnimations = False
+    Application.StatusBar = True
+    
+    'Set global booleans = to False
+    exitAll = False
+    glbl1310 = False
+    glbl1490 = False
+    glbl1550 = False
+    glbl1625 = False
+    glbl850 = False
+    glbl1300 = False
+    glblMF = False
+    colCount = 0
+    Set main = ThisWorkbook
+    
+    Call ImportFile
+    If exitAll = True Then Exit Sub
+    Application.StatusBar = "Step (1/11): Checking data location"
+    
+    'Checking that first column on each sheet is empty
+    Call ClearSheet
+    
+    'Boxes asking for spec limits
+    Application.StatusBar = "Step (2/11): Asking for IL Max"
+    IL = Application.InputBox(Prompt:="Introduzca IL Max", Title:="IL", Type:=2)
+    Application.StatusBar = "Step (3/11): Asking for RL Min"
+    RL = Application.InputBox(Prompt:="Introduzca RL Min", Title:="RL", Type:=2)
+    
+        
+    Application.StatusBar = "Step (4/11): Rearranging Data"
+    Call RearrangeData
+     
+     
+    Call MForSF
+    If glblMF = True Then Exit Sub
+    
+    Application.StatusBar = "Step (5/11): Deleting Unnecessary Data"
+    Call Delete
+    
+    Application.StatusBar = "Step (6/11): Consolidating Data"
+    Call AddCols
+    
+    'Fills in report tab with MT Ready Data
+    Application.StatusBar = "Step (7/11): Filling in Report"
+    Call FillUp
+    
+    Application.StatusBar = "Step (8/11): Checking for Pass/Fail"
+    Call pass_fail
+    
+    Application.StatusBar = "Step (9/11): Calculating Yields"
+    Call Yields
+    
+    Application.StatusBar = "Step (10/11): Time Difference"
+    Call TimeDiff
+    Call MoveCols
+    
+    'Delete any IL/RL wavelength columns not being used
+    Call DeleteEmptyCols
+    Call InsertCols
+    
+    main.Worksheets("Report").Range("A1").EntireRow.Font.Bold = True
+    
+    Call EndResult
+    
+    'Adjust size of columns
+    main.Worksheets("Report").UsedRange.Columns.AutoFit
+    main.Worksheets("MT Ready Data").UsedRange.Columns.AutoFit
+    main.Worksheets("Raw Data").UsedRange.Columns.AutoFit
+    Call SelectA1
+    
+    Application.StatusBar = "Step (11/11): Complete"
+    Application.StatusBar = False
+        
+    'Reset Macro Optimization Settings
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableAnimations = True
+        
+'MsgBox ("Completed")
+    
+
+End Sub
+
+Private Sub MForSF()
+Set main = ThisWorkbook
+
+For i = 2 To main.Worksheets("MT Ready Data").Range("B:B").Rows.count
+    If main.Worksheets("MT Ready Data").Cells(i, 2).Value > 1 Then
+        glblMF = True
+        Call MFMain
+        Exit For
+    End If
+Next i
+
+
+End Sub
+Private Sub InsertCols()
+
+Set main = ThisWorkbook
+lastCol = main.Worksheets("Report").UsedRange.Columns.count
+
+For i = 3 To lastCol
+    If InStr(1, (main.Worksheets("Report").Cells(1, i).Value), "Serials") <> 0 Then
+        Columns(i).Insert Shift:=xlToRight
+        Columns(i).Insert Shift:=xlToRight
+        Exit Sub
+    End If
+
+Next i
+
+End Sub
+
+
+Private Sub ClearSheet()
+
+
+ 'Checking that first column on each sheet is empty
+    Set main = ThisWorkbook
+    Set sh1arange = main.Worksheets("MT Ready Data").Range("A:A")
+    Set sh2arange = main.Worksheets("Report").Range("A:A") 'Change this range to A2:Z10000 so it checks whole sheet?
+    
+    sh1count = Application.WorksheetFunction.CountA(sh1arange)
+    sh2count = Application.WorksheetFunction.CountA(sh2arange)
+    
+    
+    If sh2count > 1 Then
+        qTemp = MsgBox("Report is not clean, Want to clean it first? This will erase all current data", vbQuestion + vbYesNo, "Error")
+        
+        If qTemp = vbNo Then
+            GoTo 0
+        Else
+            main.Worksheets("MT Ready Data").Range("A1:M1048576").Clear
+            main.Worksheets("Report").Range("A2:AA1048576").Clear
+            main.Worksheets("MT Ready Data").Select
+            Range("A1").Select
+            GoTo 0
+        End If
+    End If
+
+0
+
+End Sub
+
+
+Private Sub RearrangeData()
+
+        Set main = ThisWorkbook
+        Range("A:A,C:D,K:L").Select
+        Selection.Delete Shift:=xlToLeft
+        Columns("H:H").Select
+        Selection.Insert Shift:=xlToRight
+        Selection.Insert Shift:=xlToRight
+        Selection.Insert Shift:=xlToRight
+        Selection.Insert Shift:=xlToRight
+        Columns("A:D").Copy
+        Range("H1").Select
+        ActiveSheet.Paste
+        Range("H2:N2").Select
+        Range(Selection, Selection.End(xlDown)).Select
+        Selection.Cut
+        Range("A1").Select
+        Selection.End(xlDown).Select
+        ActiveCell.Offset(1, 0).Select
+        ActiveSheet.Paste
+        Columns("H:P").Select
+        Selection.Delete Shift:=xlToLeft
+        
+    'Convert from text to numbers
+    main.Worksheets("MT Ready Data").Range("B2", Range("F" & Rows.count).End(xlUp)).Select
+    For Each xCell In Selection
+        xCell.Value = CDec(xCell.Value)
+    Next xCell
+
+End Sub
+
+
+Private Sub Delete()
+
+Set main = ThisWorkbook
+Set aRange = main.Worksheets("MT Ready Data").Range("A:A")
+Set frange = main.Worksheets("MT Ready Data").Range("F:F")
+x = Application.WorksheetFunction.CountA(aRange)
+y = Application.WorksheetFunction.CountA(frange)
+
+
+Do While x <> y
+
+x = Application.WorksheetFunction.CountA(aRange)
+y = Application.WorksheetFunction.CountA(frange)
+
+    For i = 2 To x
+        Application.StatusBar = "Progress Step (5/11): " & i & " of " & x & ": " & Format(i / x, "0%")
+        If Range("F" & i).Value = "" Or Range("F" & i).Value = "0" Then
+        'Deletes if RL column has empty values
+           Rows(i & ":" & i).Delete Shift:=xlUp
+        Else
+            Select Case True
+            Case (Len(Range("B" & i).Text) = 1 And Len(Range("C" & i).Text) = 1)
+                Range("H" & i).Value = Range("A" & i).Text & "-" & "0" & Range("B" & i).Text & "-" & "0" & Range("C" & i).Text _
+                & "-" & Range("G" & i).Value
+            Case (Len(Range("B" & i).Text) = 1 And Len(Range("C" & i).Text) > 1)
+                Range("H" & i).Value = Range("A" & i).Text & "-" & "0" & Range("B" & i).Text & "-" & "" & Range("C" & i).Text _
+                & "-" & Range("G" & i).Value
+            End Select
+        End If
+    Next i
+Loop
+
+    main.Worksheets("MT Ready Data").Range("H1").Value = "ID"
+    Columns("A:H").Select
+    ActiveSheet.Range("A1:H1048576").RemoveDuplicates Columns:=Array(1, 2, 3, 4, 5, 6, 7, 8), Header:=xlYes
+
+End Sub
+
+
+Private Sub Consolidate()
+  
+    ThisWorkbook.Worksheets("MT Ready Data").Columns("H:H").Copy
+    ThisWorkbook.Worksheets("Report").Range("A1").PasteSpecial xlPasteValues
+    ThisWorkbook.Worksheets("Report").Range("A:A").RemoveDuplicates Columns:=1, Header:=xlNo
+    
+End Sub
+
+Private Sub FillUp()
+Dim found As Range
+Set main = ThisWorkbook
+Set aRange = main.Worksheets("Report").Range("A:A")
+Set brange = main.Worksheets("Report").Range("B:B")
+
+Set crange = main.Worksheets("Report").Range("C:C")
+Set frange = main.Worksheets("Report").Range("F:F")
+Set grange = main.Worksheets("Report").Range("O:O")
+arowcount = Application.WorksheetFunction.CountA(aRange)
+hrowcount = Sheets("MT Ready Data").Cells(Rows.count, 8).End(xlUp).Row
+
+
+x = Application.WorksheetFunction.CountA(aRange)
+y = Application.WorksheetFunction.CountA(crange)
+Z = Application.WorksheetFunction.CountA(frange)
+w = Application.WorksheetFunction.CountA(grange)
+b = Application.WorksheetFunction.CountA(brange)
+On Error GoTo errorhandler
+
+'Filling in the column for port number
+    For i = 2 To arowcount
+        idStr = main.Worksheets("Report").Range("A" & i).Value
+        lenID = Len(main.Worksheets("MT Ready Data").Range("A2").Value)
+        'Finds len serial number and adds known length from concatenation
+        main.Worksheets("Report").Range("B" & i).Value = Left(idStr, lenID + 6)
+    Next i
+
+'Filling in the IL/RL columns
+    For i = 2 To hrowcount
+        Application.StatusBar = "Progress Step (7/11): " & i & " of " & hrowcount & ": " & Format(i / hrowcount, "0%")
+        If main.Worksheets("MT Ready Data").Range("D" & i).Value = "1310" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value2
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("C" & mainrow).PasteSpecial xlPasteValues
+            glbl1310 = True
+        
+        ElseIf main.Worksheets("MT Ready Data").Range("D" & i).Value = "1490" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("E" & mainrow).PasteSpecial xlPasteValues
+            glbl1490 = True
+            
+        ElseIf main.Worksheets("MT Ready Data").Range("D" & i).Value = "1550" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("G" & mainrow).PasteSpecial xlPasteValues
+            glbl1550 = True
+            
+        ElseIf main.Worksheets("MT Ready Data").Range("D" & i).Value = "1625" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("I" & mainrow).PasteSpecial xlPasteValues
+            glbl1625 = True
+            
+        ElseIf main.Worksheets("MT Ready Data").Range("D" & i).Value = "850" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("K" & mainrow).PasteSpecial xlPasteValues
+            glbl850 = True
+            
+        ElseIf main.Worksheets("MT Ready Data").Range("D" & i).Value = "1300" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("M" & mainrow).PasteSpecial xlPasteValues
+            glbl1300 = True
+        End If
+Nextfor:
+    Next i
+
+'Determining how many different wavelengths are used
+If glbl1310 = True Then colCount = colCount + 1
+If glbl1490 = True Then colCount = colCount + 1
+If glbl1550 = True Then colCount = colCount + 1
+If glbl1625 = True Then colCount = colCount + 1
+If glbl850 = True Then colCount = colCount + 1
+If glbl1300 = True Then colCount = colCount + 1
+
+
+With main.Worksheets("Report").Sort
+     .SortFields.Add Key:=Range("A1"), Order:=xlAscending
+     .SetRange Range("A:N")
+     .Header = xlYes
+     .Apply
+End With
+
+main.Worksheets("Report").Columns("B:B").Copy
+Sheets("Report").Select
+Range("O1").PasteSpecial xlPasteValues
+ActiveSheet.Range("O1:P1048576").RemoveDuplicates Columns:=Array(1), Header:=xlYes
+
+w = Application.WorksheetFunction.CountA(grange)
+
+For i = 2 To w
+    main.Worksheets("Report").Range("P" & i).Value = Application.WorksheetFunction.CountIf(main.Worksheets("Report").Range("B:B"), main.Worksheets("Report").Range("O" & i).Value)
+Next i
+
+Exit Sub
+
+errorhandler:
+    If Err.Number = 91 Then
+    main.Worksheets("MT Ready Data").Range("O" & i).Value = "Not Found"
+    Resume Nextfor
+    End If
+
+End Sub
+
+Private Sub pass_fail()
+
+Set main = ThisWorkbook
+'Pass/Fail
+
+lLastRow = Sheets("Report").Cells(Rows.count, 1).End(xlUp).Row
+For i = 2 To lLastRow
+    For j = 1 To 15
+        If InStr(1, (Cells(1, j).Value), "IL") <> 0 Then
+            wvIL = main.Worksheets("Report").Cells(i, j).Value
+            If wvIL <> "" Then
+                If (CDbl(wvIL) > CDbl(IL)) Then
+                    main.Worksheets("Report").Range("Q" & i).Value = "Fail"
+                End If
+            End If
+            
+        ElseIf InStr(1, (Cells(1, j).Value), "RL") <> 0 Then
+            wvRL = main.Worksheets("Report").Cells(i, j).Value
+            If wvRL <> "" Then
+                If (CDbl(wvRL) < CDbl(RL)) Then
+                    main.Worksheets("Report").Range("Q" & i).Value = "Fail"
+                End If
+            End If
+        End If
+    Next j
+Next i
+
+'For any blank cells in pass/fail row after loop above, fill in pass
+For i = 2 To lLastRow
+    If main.Worksheets("Report").Range("Q" & i).Value = "" Then
+        main.Worksheets("Report").Range("Q" & i).Value = "Pass"
+    End If
+Next i
+
+For i = 2 To lLastRow
+    If main.Worksheets("Report").Range("Q" & i).Value = "Pass" Then
+        main.Worksheets("Report").Range("Q" & i).Interior.Color = RGB(0, 255, 0)
+    ElseIf main.Worksheets("Report").Range("Q" & i).Value = "Fail" Then
+        main.Worksheets("Report").Range("Q" & i).Interior.Color = RGB(255, 0, 0)
+    End If
+Next i
+
+
+End Sub
+
+Private Sub Yields()
+
+Set main = ThisWorkbook
+Dim serialStr As String
+Dim lLastRow As Long
+Dim Max As Long
+
+'Serials
+Set lrange = main.Worksheets("Report").Range("T:T")
+'Ports
+Set orange = main.Worksheets("Report").Range("W:W")
+
+    main.Worksheets("Report").Select
+    Range("O2").Select
+    Range(Selection, Selection.End(xlDown)).Select
+    Selection.Copy
+    Range("R2").Select
+    Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks _
+        :=False, Transpose:=False
+    Application.CutCopyMode = False
+    Selection.TextToColumns Destination:=Range("R2"), DataType:=xlDelimited, _
+        TextQualifier:=xlDoubleQuote, ConsecutiveDelimiter:=False, Tab:=True, _
+        Semicolon:=False, Comma:=False, Space:=False, Other:=True, OtherChar _
+        :="-", FieldInfo:=Array(Array(1, 2), Array(2, 1), Array(3, 1)), _
+        TrailingMinusNumbers:=True
+    Range("R2").Select
+    Range(Selection, Selection.End(xlDown)).Select
+    Selection.Copy
+    Range("T2").Select
+    Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks _
+        :=False, Transpose:=False
+    Application.CutCopyMode = False
+    
+    'l is number of serial numbers count before duplicates are removed
+    l = Application.WorksheetFunction.CountA(lrange)
+    ActiveSheet.Range("$T$1:$T$" & l).RemoveDuplicates Columns:=1, Header:=xlYes
+    
+    'l is number of serial numbers without duplicates given
+    l = Application.WorksheetFunction.CountA(lrange)
+    Range("S2").Select
+    Range(Selection, Selection.End(xlDown)).Select
+    Selection.Copy
+    Range("W2").Select
+    Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks _
+        :=False, Transpose:=False
+    Application.CutCopyMode = False
+    
+    'o is the number of ports without duplicates
+    o = Application.WorksheetFunction.CountA(orange)
+    ActiveSheet.Range("$W$1:$W$" & o).RemoveDuplicates Columns:=1, Header:=xlYes
+    o = Application.WorksheetFunction.CountA(orange)
+    
+    'Count how many fibers based off of the number of ports
+    lLastRow = Sheets("MT Ready Data").Cells(Rows.count, 3).End(xlUp).Row
+    Max = 0
+    For i = 2 To lLastRow
+        If main.Worksheets("MT Ready Data").Cells(i, 3).Value > Max Then
+            Max = main.Worksheets("MT Ready Data").Cells(i, 3).Value
+        End If
+    Next i
+    fibers = CInt(Max)
+    
+    For i = 2 To l
+        'serial is calculated by summing if there are multiple of the same serial number with the same port number
+        serial_tries = Application.WorksheetFunction.SumIf(main.Worksheets("Report").Range("R:R"), main.Worksheets("Report").Range("T" & i).Value, main.Worksheets("Report").Range("P:P"))
+        main.Worksheets("Report").Range("U" & i).Value = serial_tries
+        If serial_tries = fibers Then
+            main.Worksheets("Report").Range("V" & i).Value = "Y"
+        Else
+            main.Worksheets("Report").Range("V" & i).Value = "N"
+        End If
+    Next i
+    
+    For i = 2 To o
+        port_tries = Application.WorksheetFunction.SumIf(main.Worksheets("Report").Range("S:S"), main.Worksheets("Report").Range("W" & i).Value, main.Worksheets("Report").Range("P:P"))
+        main.Worksheets("Report").Range("X" & i).Value = port_tries
+    Next i
+    
+    main.Worksheets("Report").Range("Y2").Value = Application.WorksheetFunction.CountIf(main.Worksheets("Report").Range("V:V"), "Y") / Application.WorksheetFunction.CountA(main.Worksheets("Report").Range("V:V"))
+    'main.Worksheets("Report").Range("Z2").Value = Application.WorksheetFunction.CountIf(main.Worksheets("Report").Range("P:P"), "1") / Application.WorksheetFunction.CountA(main.Worksheets("Report").Range("P:P"))
+    Range("Y2:Z2").Select
+    Selection.Style = "Percent"
+
+End Sub
+
+Public Function GetWorkBook(ByVal sFullName As String) As Workbook
+    Dim strFile As String
+    Dim wbReturn As Workbook
+
+    strFile = Dir(sFullName)
+
+    On Error Resume Next
+        Set wbReturn = Workbooks(strFile)
+
+        If wbReturn Is Nothing Then
+            Set wbReturn = Workbooks.Open(sFullName)
+        End If
+    On Error GoTo 0
+
+    Set GetWorkBook = wbReturn
+End Function
+
+
+Private Sub ImportFile()
+
+Dim wb As Workbook
+Dim wb1 As Workbook
+Dim FilePicker As FileDialog
+Dim strMyPath As String
+Dim Filename As String
+
+Set wb1 = ThisWorkbook
+Call Clean_Report
+Call DeleteColsStart
+
+'Retrieve Target File Path From User
+  Set FilePicker = Application.FileDialog(msoFileDialogFilePicker)
+    With FilePicker
+      .Title = "Select A MT Ready Data File"
+      .AllowMultiSelect = False
+        If .Show <> -1 Then
+        'If cancel button is clicked
+            exitAll = True
+            Exit Sub
+        Else
+        'If ok button is clicked
+            strMyPath = .SelectedItems.Item(1)
+        End If
+    End With
+
+    'Set variable equal to opened workbook
+      Set wb = Workbooks.Open(Filename:=strMyPath)
+      wb.Activate
+      
+    
+    'Ensure Workbook has opened before moving on to next line of code
+      'DoEvents
+    
+    'Copy data into MT Ready Data tab
+      wb.Worksheets(1).UsedRange.Copy
+      ThisWorkbook.Worksheets("MT Ready Data").Activate
+      ThisWorkbook.Worksheets("MT Ready Data").Cells(1, 1).Select
+      ThisWorkbook.Worksheets("MT Ready Data").PasteSpecial
+      ThisWorkbook.Worksheets("Raw Data").PasteSpecial
+    
+    'Save and Close Workbook
+      
+      wb.Application.CutCopyMode = False
+      wb.Close False
+      
+
+End Sub
+
+
+Private Sub SelectA1()
+
+    Dim ws As Worksheet
+        
+    For Each ws In ActiveWorkbook.Sheets
+        If ws.Name <> "Report" Then
+            ws.Activate
+            ws.[a1].Select
+            Application.GoTo Reference:=Range("a1"), Scroll:=True
+        End If
+    Next ws
+    Worksheets("Report").Activate
+    Worksheets("Report").Range("B1").Select
+    
+
+End Sub
+
+
+Private Sub DeleteEmptyCols()
+'This sub deletes any wavelength columns that are empty
+
+lLastRow = Sheets("Report").Cells(Rows.count, 1).End(xlUp).Row
+
+For i = ActiveSheet.UsedRange.Columns.count To 3 Step -1
+        If WorksheetFunction.CountA(ActiveSheet.Range(ActiveSheet.Cells(2, i), ActiveSheet.Cells(lLastRow, i))) = 0 Then
+            ActiveSheet.Columns(i).Delete
+        End If
+Next i
+
+End Sub
+
+Private Sub AddCols()
+'This sub procedure adds in all the possible wavelength columns to the report tab
+'Worksheets("Report").Cells(1, 1).Value = "ID"
+Worksheets("Report").Cells(1, 2).Value = "Port"
+Worksheets("Report").Cells(1, 3).Value = "Port"
+Worksheets("Report").Cells(1, 4).Value = "Tries"
+Worksheets("Report").Cells(1, 5).Value = "Pass/Fail"
+Worksheets("Report").Cells(1, 6).Value = "Serial"
+Worksheets("Report").Cells(1, 7).Value = "Port"
+Worksheets("Report").Cells(1, 8).Value = "Serials"
+Worksheets("Report").Cells(1, 9).Value = "Tries"
+Worksheets("Report").Cells(1, 10).Value = "MFPY"
+Worksheets("Report").Cells(1, 11).Value = "Ports"
+Worksheets("Report").Cells(1, 12).Value = "Tries"
+Worksheets("Report").Cells(1, 13).Value = "% MFPY"
+'Worksheets("Report").Cells(1, 14).Value = "Fiber MFPY"
+
+Call Consolidate
+
+ThisWorkbook.Worksheets("Report").Columns("C:N").Insert Shift:=xlRight, CopyOrigin:=xlFormatFromLeftOrAbove
+
+Worksheets("Report").Cells(1, 3).Value = "IL 1310"
+Worksheets("Report").Cells(1, 4).Value = "RL 1310"
+Worksheets("Report").Cells(1, 5).Value = "IL 1490"
+Worksheets("Report").Cells(1, 6).Value = "RL 1490"
+Worksheets("Report").Cells(1, 7).Value = "IL 1550"
+Worksheets("Report").Cells(1, 8).Value = "RL 1550"
+Worksheets("Report").Cells(1, 9).Value = "IL 1625"
+Worksheets("Report").Cells(1, 10).Value = "RL 1625"
+Worksheets("Report").Cells(1, 11).Value = "IL 850"
+Worksheets("Report").Cells(1, 12).Value = "RL 850"
+Worksheets("Report").Cells(1, 13).Value = "IL 1300"
+Worksheets("Report").Cells(1, 14).Value = "RL 1300"
+
+
+Rows(1).Select
+Selection.Font.Bold = True
+
+End Sub
+
+Private Sub DeleteColsStart()
+
+For i = 1 To 27
+    If InStr(1, (ThisWorkbook.Worksheets("Report").Cells(1, i).Value), "IL") <> 0 Then
+        ThisWorkbook.Worksheets("Report").Columns(i).Delete
+        i = i - 1
+    ElseIf InStr(1, (ThisWorkbook.Worksheets("Report").Cells(1, i).Value), "RL") <> 0 Then
+        ThisWorkbook.Worksheets("Report").Columns(i).Delete
+        i = i - 1
+    ElseIf InStr(1, (ThisWorkbook.Worksheets("Report").Cells(1, i).Value), "Time") <> 0 Then
+        ThisWorkbook.Worksheets("Report").Columns(i).Delete
+        i = i - 1
+    End If
+Next i
+
+End Sub
+
+
+Private Sub TimeDiff()
+
+Set main = ThisWorkbook
+Dim totalLen As Long
+
+Set aRange = main.Worksheets("Report").Range("A:A")
+lastrow = Application.WorksheetFunction.CountA(aRange)
+main.Worksheets("Report").Range("AA1").Value = ChrW(916) & " Time"
+serialLen = Len(main.Worksheets("MT Ready Data").Range("A2").Value)
+totalLen = serialLen + 7
+
+For i = 2 To lastrow
+    If main.Worksheets("Report").Cells(i, 2).Value = main.Worksheets("Report").Cells(i + 1, 2).Value Then
+        If main.Worksheets("Report").Cells(i, 1).Value <> "" And main.Worksheets("Report").Cells(i + 1, 1).Value <> "" Then
+            firstTime = main.Worksheets("Report").Cells(i, 1).Value
+            secondTime = main.Worksheets("Report").Cells(i + 1, 1).Value
+            secOne = Right(firstTime, Len(firstTime) - totalLen)
+            secTwo = Right(secondTime, Len(secondTime) - totalLen)
+            main.Worksheets("Report").Range("AC2").Value = secOne
+            main.Worksheets("Report").Range("AC2").NumberFormat = "0.00"
+            main.Worksheets("Report").Range("AC3").Value = secTwo
+            main.Worksheets("Report").Range("AC3").NumberFormat = "0.00"
+            secDiff = main.Worksheets("Report").Range("AC2").Value - main.Worksheets("Report").Range("AC3").Value
+            totSec = Abs(secDiff)
+            If totSec < 1 Then
+                main.Worksheets("Report").Cells(i + 1, 27).Value = Format(totSec, "hh:mm:ss")
+            Else
+                main.Worksheets("Report").Cells(i + 1, 27).Value = Format(totSec, "dd:hh:mm:ss")
+            End If
+        End If
+    End If
+Next i
+
+Columns("AC:AC").ClearContents
+Columns("AA:AA").Cut
+Columns("R:R").Insert Shift:=xlToRight
+
+
+
+End Sub
+
+
+Private Sub MoveCols()
+
+Set main = ThisWorkbook
+
+main.Worksheets("Report").Range("O:O, P:P, S:S, T:T, X:X, Y:Y").EntireColumn.Delete
+
+End Sub
+
+
+Private Sub EndResult()
+
+Set main = ThisWorkbook
+Dim lastrow As Long
+Dim lastrow2 As Long
+Dim serLen As Long
+Dim passfailCol As Long
+Dim serialsCol As Long
+Dim count As Long
+Dim resultCol As Long
+Dim lastCol As Long
+lastrow = Sheets("Report").Cells(Rows.count, 2).End(xlUp).Row
+serLen = Len(main.Worksheets("MT Ready Data").Range("A2").Value)
+
+'Make column for serials with repeats
+For i = 2 To lastrow
+    main.Worksheets("Report").Range("AB" & i).Value = Left(main.Worksheets("Report").Range("B" & i).Value, serLen)
+Next i
+
+'Find pass/fail column
+For j = 1 To main.Worksheets("Report").UsedRange.Columns.count
+    If InStr(1, main.Worksheets("Report").Cells(1, j).Value, "Pass") > 0 Then
+        passfailCol = j
+        Exit For
+    End If
+Next j
+
+'Find serials column
+For k = 1 To main.Worksheets("Report").UsedRange.Columns.count
+    If InStr(1, main.Worksheets("Report").Cells(1, k).Value, "Serials") > 0 Then
+        serialsCol = k
+        Exit For
+    End If
+Next k
+
+main.Worksheets("Report").Range("AC1").Value = "Result"
+lastrow2 = Sheets("Report").Cells(Rows.count, serialsCol).End(xlUp).Row
+
+For l = 2 To lastrow2
+    count = Application.WorksheetFunction.CountIfs(main.Worksheets("Report").Range("AB:AB"), _
+        "=" & main.Worksheets("Report").Cells(l, serialsCol), main.Worksheets("Report").Columns(passfailCol), _
+        "=" & "Pass")
+    If count > 0 Then
+        main.Worksheets("Report").Range("AC" & l).Value = "P"
+    Else
+        main.Worksheets("Report").Range("AC" & l).Value = "F"
+    End If
+    
+Next l
+
+main.Worksheets("Report").Range("AC:AC").Cut
+Columns(serialsCol + 2).Insert Shift:=xlToRight
+
+For k = 1 To main.Worksheets("Report").UsedRange.Columns.count
+    If InStr(1, main.Worksheets("Report").Cells(1, k).Value, "Result") > 0 Then
+        resultCol = k
+        Exit For
+    End If
+Next k
+
+
+For m = 2 To lastrow2
+    serialTries = main.Worksheets("Report").Cells(m, resultCol - 1).Value
+    If serialTries = fibers Then
+        If main.Worksheets("Report").Cells(m, resultCol).Value = "P" Then
+            main.Worksheets("Report").Cells(m, resultCol + 1).Value = "Y"
+        Else
+            main.Worksheets("Report").Cells(m, resultCol + 1).Value = "N"
+        End If
+    Else
+        main.Worksheets("Report").Cells(m, resultCol + 1).Value = "N"
+    End If
+Next m
+
+
+main.Worksheets("Report").Range("AB:AB, AC:AC").ClearContents
+
+
+For k = 1 To main.Worksheets("Report").UsedRange.Columns.count
+    If InStr(1, main.Worksheets("Report").Cells(1, k).Value, "%") > 0 Then
+        lastCol = k
+        Exit For
+    End If
+Next k
+
+main.Worksheets("Report").Cells(1, lastCol + 3).Value = "# of Fibers"
+main.Worksheets("Report").Cells(2, lastCol + 3).Value = "IL Spec"
+main.Worksheets("Report").Cells(3, lastCol + 3).Value = "RL Spec"
+main.Worksheets("Report").Cells(2, lastCol + 3).Font.Bold = True
+main.Worksheets("Report").Cells(3, lastCol + 3).Font.Bold = True
+
+main.Worksheets("Report").Cells(1, lastCol + 4).Value = fibers
+main.Worksheets("Report").Cells(1, lastCol + 4).Font.Bold = False
+main.Worksheets("Report").Cells(2, lastCol + 4).Value = IL
+main.Worksheets("Report").Cells(3, lastCol + 4).Value = RL
+
+
+End Sub
+
+
+
+
+
+
+
+'START MODULE 2
+
+
+
+
+
+
+
+Sub Clean_Report()
+
+Dim chtObj As ChartObject
+
+Set main = ThisWorkbook
+        main.Worksheets("Raw Data").Cells.ClearContents
+        main.Worksheets("MT Ready Data").Cells.ClearContents
+        main.Worksheets("Report").Cells.ClearContents
+        main.Worksheets("Report").Cells.ClearFormats
+        main.Worksheets("Report").Cells.Interior.Color = xlNone
+        main.Worksheets("Instructions").Select
+        Range("A1").Select
+
+End Sub
+
+
+
+
+
+
+
+
+
+'START MODULE 3
+
+
+
+
+
+
+Dim glbl1310, glbl1490, glbl1550, glbl1625, glbl850, glbl1300 As Boolean
+Dim colCount As Integer
+Dim fibers As Long
+
+
+
+Public Sub MFMain()
+
+    Set main = ThisWorkbook
+        
+    Application.StatusBar = "Step (5/11): Deleting Unnecessary Data"
+    Call Concatenate
+    
+    Application.StatusBar = "Step (6/11): Consolidating Data"
+    Call AddCols
+    
+    'Fills in report tab with MT Ready Data
+    Application.StatusBar = "Step (7/11): Filling in Report"
+    Call FillUp
+    
+    Application.StatusBar = "Step (8/11): Checking for Pass/Fail"
+    Call pass_fail
+    
+    Application.StatusBar = "Step (9/11): Calculating Yields"
+    Call Yields
+    
+    Call TimeDiff
+    Call MoveCols
+    
+    'Delete any IL/RL wavelength columns not being used
+    Call DeleteEmptyCols
+    Call InsertCols
+   
+    
+    main.Worksheets("Report").Range("A1").EntireRow.Font.Bold = True
+    
+     Call EndResult
+    
+    'Adjust size of columns
+    main.Worksheets("Report").UsedRange.Columns.AutoFit
+    main.Worksheets("MT Ready Data").UsedRange.Columns.AutoFit
+    main.Worksheets("Raw Data").UsedRange.Columns.AutoFit
+    Call SelectA1
+    
+    Application.StatusBar = "Step (11/11): Complete"
+    Application.StatusBar = False
+        
+    'Reset Macro Optimization Settings
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableAnimations = True
+        
+'MsgBox ("Completed")
+    
+
+End Sub
+
+
+Private Sub InsertCols()
+
+Set main = ThisWorkbook
+lastCol = main.Worksheets("Report").UsedRange.Columns.count
+
+For i = 3 To lastCol
+    If InStr(1, (main.Worksheets("Report").Cells(1, i).Value), "Serials") <> 0 Then
+        Columns(i).Insert Shift:=xlToRight
+        Columns(i).Insert Shift:=xlToRight
+        Exit Sub
+    End If
+
+Next i
+
+End Sub
+
+
+Private Sub Concatenate()
+
+Set main = ThisWorkbook
+Set aRange = main.Worksheets("MT Ready Data").Range("A:A")
+Set frange = main.Worksheets("MT Ready Data").Range("F:F")
+x = Application.WorksheetFunction.CountA(aRange)
+y = Application.WorksheetFunction.CountA(frange)
+
+Do While x <> y
+
+x = Application.WorksheetFunction.CountA(aRange)
+y = Application.WorksheetFunction.CountA(frange)
+
+    For i = 2 To x
+        Application.StatusBar = "Progress Step (5/11): " & i & " of " & x & ": " & Format(i / x, "0%")
+        If Range("F" & i).Value = "" Or Range("F" & i).Value = "0" Then
+        'Deletes if RL column has empty values
+           Rows(i & ":" & i).Delete Shift:=xlUp
+        Else
+            Select Case True
+            Case (Len(Range("B" & i).Text) > 1 And Len(Range("C" & i).Text) = 1)
+                Range("H" & i).Value = Range("A" & i).Text & "-" & "" & Range("B" & i).Text & "-" & "0" & Range("C" & i).Text _
+                & "-" & Range("G" & i).Value
+            Case (Len(Range("B" & i).Text) > 1 And Len(Range("C" & i).Text) > 1)
+                Range("H" & i).Value = Range("A" & i).Text & "-" & "" & Range("B" & i).Text & "-" & "" & Range("C" & i).Text _
+                & "-" & Range("G" & i).Value
+            End Select
+        End If
+    Next i
+Loop
+
+    main.Worksheets("MT Ready Data").Range("H1").Value = "ID"
+    Columns("A:H").Select
+    ActiveSheet.Range("A1:H1048576").RemoveDuplicates Columns:=Array(1, 2, 3, 4, 5, 6, 7, 8), Header:=xlYes
+
+End Sub
+
+
+Private Sub Consolidate()
+  
+    ThisWorkbook.Worksheets("MT Ready Data").Columns("H:H").Copy
+    ThisWorkbook.Worksheets("Report").Range("A1").PasteSpecial xlPasteValues
+    ThisWorkbook.Worksheets("Report").Range("A:A").RemoveDuplicates Columns:=1, Header:=xlNo
+    
+End Sub
+
+Private Sub FillUp()
+Dim found As Range
+Set main = ThisWorkbook
+Set aRange = main.Worksheets("Report").Range("A:A")
+Set brange = main.Worksheets("Report").Range("B:B")
+
+Set crange = main.Worksheets("Report").Range("C:C")
+Set frange = main.Worksheets("Report").Range("F:F")
+Set grange = main.Worksheets("Report").Range("O:O")
+arowcount = Application.WorksheetFunction.CountA(aRange)
+hrowcount = Sheets("MT Ready Data").Cells(Rows.count, 8).End(xlUp).Row
+
+
+x = Application.WorksheetFunction.CountA(aRange)
+y = Application.WorksheetFunction.CountA(crange)
+Z = Application.WorksheetFunction.CountA(frange)
+w = Application.WorksheetFunction.CountA(grange)
+b = Application.WorksheetFunction.CountA(brange)
+On Error GoTo errorhandler
+
+'Filling in the column for port number
+    For i = 2 To arowcount
+        idStr = main.Worksheets("Report").Range("A" & i).Value
+        lenID = Len(main.Worksheets("MT Ready Data").Range("A2").Value)
+        'Finds len serial number and adds known length from concatenation
+        main.Worksheets("Report").Range("B" & i).Value = Left(idStr, lenID + 6)
+    Next i
+
+'Filling in the IL/RL columns
+    For i = 2 To hrowcount
+        Application.StatusBar = "Progress Step (7/11): " & i & " of " & hrowcount & ": " & Format(i / hrowcount, "0%")
+        If main.Worksheets("MT Ready Data").Range("D" & i).Value = "1310" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value2
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("C" & mainrow).PasteSpecial xlPasteValues
+            glbl1310 = True
+        
+        ElseIf main.Worksheets("MT Ready Data").Range("D" & i).Value = "1490" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("E" & mainrow).PasteSpecial xlPasteValues
+            glbl1490 = True
+            
+        ElseIf main.Worksheets("MT Ready Data").Range("D" & i).Value = "1550" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("G" & mainrow).PasteSpecial xlPasteValues
+            glbl1550 = True
+            
+        ElseIf main.Worksheets("MT Ready Data").Range("D" & i).Value = "1625" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("I" & mainrow).PasteSpecial xlPasteValues
+            glbl1625 = True
+            
+        ElseIf main.Worksheets("MT Ready Data").Range("D" & i).Value = "850" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("K" & mainrow).PasteSpecial xlPasteValues
+            glbl850 = True
+            
+        ElseIf main.Worksheets("MT Ready Data").Range("D" & i).Value = "1300" Then
+            lookupvalue = main.Worksheets("MT Ready Data").Range("H" & i).Value
+            Set found = Sheets("Report").Columns("A").Find(what:=lookupvalue, LookIn:=xlValues, lookat:=xlWhole)
+            mainrow = found.Row
+            main.Worksheets("MT Ready Data").Range("E" & i & ":" & "F" & i).Copy
+            main.Worksheets("Report").Range("M" & mainrow).PasteSpecial xlPasteValues
+            glbl1300 = True
+        End If
+Nextfor:
+    Next i
+
+'Determining how many different wavelengths are used
+If glbl1310 = True Then colCount = colCount + 1
+If glbl1490 = True Then colCount = colCount + 1
+If glbl1550 = True Then colCount = colCount + 1
+If glbl1625 = True Then colCount = colCount + 1
+If glbl850 = True Then colCount = colCount + 1
+If glbl1300 = True Then colCount = colCount + 1
+
+
+With main.Worksheets("Report").Sort
+     .SortFields.Add Key:=Range("A1"), Order:=xlAscending
+     .SetRange Range("A:N")
+     .Header = xlYes
+     .Apply
+End With
+
+main.Worksheets("Report").Columns("B:B").Copy
+Sheets("Report").Select
+Range("O1").PasteSpecial xlPasteValues
+ActiveSheet.Range("O1:P1048576").RemoveDuplicates Columns:=Array(1), Header:=xlYes
+
+w = Application.WorksheetFunction.CountA(grange)
+
+For i = 2 To w
+    main.Worksheets("Report").Range("P" & i).Value = Application.WorksheetFunction.CountIf(main.Worksheets("Report").Range("B:B"), main.Worksheets("Report").Range("O" & i).Value)
+Next i
+
+Exit Sub
+
+errorhandler:
+    If Err.Number = 91 Then
+    main.Worksheets("MT Ready Data").Range("O" & i).Value = "Not Found"
+    Resume Nextfor
+    End If
+
+End Sub
+
+Private Sub pass_fail()
+
+Set main = ThisWorkbook
+'Pass/Fail
+
+lLastRow = Sheets("Report").Cells(Rows.count, 1).End(xlUp).Row
+For i = 2 To lLastRow
+    For j = 1 To 15
+        If InStr(1, (Cells(1, j).Value), "IL") <> 0 Then
+            wvIL = main.Worksheets("Report").Cells(i, j).Value
+            If wvIL <> "" Then
+                If (CDbl(wvIL) > CDbl(IL)) Then
+                    main.Worksheets("Report").Range("Q" & i).Value = "Fail"
+                End If
+            End If
+            
+        ElseIf InStr(1, (Cells(1, j).Value), "RL") <> 0 Then
+            wvRL = main.Worksheets("Report").Cells(i, j).Value
+            If wvRL <> "" Then
+                If (CDbl(wvRL) < CDbl(RL)) Then
+                    main.Worksheets("Report").Range("Q" & i).Value = "Fail"
+                End If
+            End If
+        End If
+    Next j
+Next i
+
+'For any blank cells in pass/fail row after loop above, fill in pass
+For i = 2 To lLastRow
+    If main.Worksheets("Report").Range("Q" & i).Value = "" Then
+        main.Worksheets("Report").Range("Q" & i).Value = "Pass"
+    End If
+Next i
+
+For i = 2 To lLastRow
+    If main.Worksheets("Report").Range("Q" & i).Value = "Pass" Then
+        main.Worksheets("Report").Range("Q" & i).Interior.Color = RGB(0, 255, 0)
+    ElseIf main.Worksheets("Report").Range("Q" & i).Value = "Fail" Then
+        main.Worksheets("Report").Range("Q" & i).Interior.Color = RGB(255, 0, 0)
+    End If
+Next i
+
+
+End Sub
+
+Private Sub Yields()
+
+Dim serialStr As String
+Dim lLastRow As Long
+Dim Max As Long
+
+Set main = ThisWorkbook
+'Serials
+Set lrange = main.Worksheets("Report").Range("T:T")
+'Ports
+Set orange = main.Worksheets("Report").Range("W:W")
+
+    main.Worksheets("Report").Select
+    Range("O2").Select
+    Range(Selection, Selection.End(xlDown)).Select
+    Selection.Copy
+    Range("R2").Select
+    Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks _
+        :=False, Transpose:=False
+    Application.CutCopyMode = False
+    For i = 2 To main.Worksheets("Report").Range("R:R").Rows.count
+        serialStr = main.Worksheets("Report").Cells(i, 18).Value
+        If serialStr <> "" Then
+            main.Worksheets("Report").Cells(i, 18).Value = Left(serialStr, Len(serialStr) - 3)
+        End If
+    Next i
+    Range("R2").Select
+    Range(Selection, Selection.End(xlDown)).Select
+    Selection.Copy
+    Range("T2").Select
+    Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks _
+        :=False, Transpose:=False
+    Application.CutCopyMode = False
+    
+    'l is number of serial numbers count before duplicates are removed
+    l = Application.WorksheetFunction.CountA(lrange)
+    ActiveSheet.Range("$T$1:$T$" & l).RemoveDuplicates Columns:=1, Header:=xlYes
+    
+    'l is number of serial numbers without duplicates given
+    l = Application.WorksheetFunction.CountA(lrange)
+    Range("S2").Select
+    Range(Selection, Selection.End(xlDown)).Select
+    Selection.Copy
+    Range("W2").Select
+    Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks _
+        :=False, Transpose:=False
+    Application.CutCopyMode = False
+    
+    lLastRow = Sheets("MT Ready Data").Cells(Rows.count, 3).End(xlUp).Row
+    Max = 0
+    For i = 2 To lLastRow
+        If main.Worksheets("MT Ready Data").Cells(i, 3).Value > Max Then
+            Max = main.Worksheets("MT Ready Data").Cells(i, 3).Value
+        End If
+    Next i
+    fibers = CInt(Max)
+    
+    For i = 2 To l
+        'serial is calculated by summing if there are multiple of the same serial number with the same port number
+        serial_tries = Application.WorksheetFunction.SumIf(main.Worksheets("Report").Range("R:R"), main.Worksheets("Report").Range("T" & i).Value, main.Worksheets("Report").Range("P:P"))
+        main.Worksheets("Report").Range("U" & i).Value = serial_tries
+        
+        'This is to fill in so the column isn't empty and gets deleted, it is overwritten in the endresult module
+        If serial_tries = fibers Then
+            main.Worksheets("Report").Range("V" & i).Value = "Y"
+        Else
+            main.Worksheets("Report").Range("V" & i).Value = "N"
+        End If
+    Next i
+    
+    main.Worksheets("Report").Range("Y2").Value = Application.WorksheetFunction.CountIf(main.Worksheets("Report").Range("V:V"), "Y") / Application.WorksheetFunction.CountA(main.Worksheets("Report").Range("V:V"))
+    Range("Y2").Select
+    Selection.Style = "Percent"
+
+End Sub
+
+
+Private Sub SelectA1()
+
+    Dim ws As Worksheet
+        
+    For Each ws In ActiveWorkbook.Sheets
+        If ws.Name <> "Report" Then
+            ws.Activate
+            ws.[a1].Select
+            Application.GoTo Reference:=Range("a1"), Scroll:=True
+        End If
+    Next ws
+    Worksheets("Report").Activate
+    Worksheets("Report").Range("B1").Select
+    
+
+End Sub
+
+
+Private Sub DeleteEmptyCols()
+'This sub deletes any wavelength columns that are empty
+
+lLastRow = Sheets("Report").Cells(Rows.count, 1).End(xlUp).Row
+
+For i = ActiveSheet.UsedRange.Columns.count To 3 Step -1
+        If WorksheetFunction.CountA(ActiveSheet.Range(ActiveSheet.Cells(2, i), ActiveSheet.Cells(lLastRow, i))) = 0 Then
+            ActiveSheet.Columns(i).Delete
+        End If
+Next i
+
+End Sub
+
+Private Sub AddCols()
+'This sub procedure adds in all the possible wavelength columns to the report tab
+
+Worksheets("Report").Cells(1, 2).Value = "Port"
+Worksheets("Report").Cells(1, 3).Value = "Port"
+Worksheets("Report").Cells(1, 4).Value = "Tries"
+Worksheets("Report").Cells(1, 5).Value = "Pass/Fail"
+Worksheets("Report").Cells(1, 6).Value = "Serial"
+Worksheets("Report").Cells(1, 7).Value = "Port"
+Worksheets("Report").Cells(1, 8).Value = "Serials"
+Worksheets("Report").Cells(1, 9).Value = "Tries"
+Worksheets("Report").Cells(1, 10).Value = "MFPY"
+Worksheets("Report").Cells(1, 11).Value = "Ports"
+Worksheets("Report").Cells(1, 12).Value = "Tries"
+Worksheets("Report").Cells(1, 13).Value = "% MFPY"
+
+Call Consolidate
+
+ThisWorkbook.Worksheets("Report").Columns("C:N").Insert Shift:=xlRight, CopyOrigin:=xlFormatFromLeftOrAbove
+
+Worksheets("Report").Cells(1, 3).Value = "IL 1310"
+Worksheets("Report").Cells(1, 4).Value = "RL 1310"
+Worksheets("Report").Cells(1, 5).Value = "IL 1490"
+Worksheets("Report").Cells(1, 6).Value = "RL 1490"
+Worksheets("Report").Cells(1, 7).Value = "IL 1550"
+Worksheets("Report").Cells(1, 8).Value = "RL 1550"
+Worksheets("Report").Cells(1, 9).Value = "IL 1625"
+Worksheets("Report").Cells(1, 10).Value = "RL 1625"
+Worksheets("Report").Cells(1, 11).Value = "IL 850"
+Worksheets("Report").Cells(1, 12).Value = "RL 850"
+Worksheets("Report").Cells(1, 13).Value = "IL 1300"
+Worksheets("Report").Cells(1, 14).Value = "RL 1300"
+
+
+Rows(1).Select
+Selection.Font.Bold = True
+
+End Sub
+
+Private Sub DeleteColsStart()
+
+For i = 1 To 27
+    If InStr(1, (ThisWorkbook.Worksheets("Report").Cells(1, i).Value), "IL") <> 0 Then
+        ThisWorkbook.Worksheets("Report").Columns(i).Delete
+        i = i - 1
+    ElseIf InStr(1, (ThisWorkbook.Worksheets("Report").Cells(1, i).Value), "RL") <> 0 Then
+        ThisWorkbook.Worksheets("Report").Columns(i).Delete
+        i = i - 1
+    ElseIf InStr(1, (ThisWorkbook.Worksheets("Report").Cells(1, i).Value), "Time") <> 0 Then
+        ThisWorkbook.Worksheets("Report").Columns(i).Delete
+        i = i - 1
+    End If
+Next i
+
+End Sub
+
+
+Private Sub TimeDiff()
+
+Set main = ThisWorkbook
+Dim totalLen As Long
+
+Set aRange = main.Worksheets("Report").Range("A:A")
+lastrow = Application.WorksheetFunction.CountA(aRange)
+main.Worksheets("Report").Range("AA1").Value = ChrW(916) & " Time"
+serialLen = Len(main.Worksheets("MT Ready Data").Range("A2").Value)
+totalLen = serialLen + 7
+
+For i = 2 To lastrow
+    If main.Worksheets("Report").Cells(i, 2).Value = main.Worksheets("Report").Cells(i + 1, 2).Value Then
+        If main.Worksheets("Report").Cells(i, 1).Value <> "" And main.Worksheets("Report").Cells(i + 1, 1).Value <> "" Then
+            firstTime = main.Worksheets("Report").Cells(i, 1).Value
+            secondTime = main.Worksheets("Report").Cells(i + 1, 1).Value
+            secOne = Right(firstTime, Len(firstTime) - totalLen)
+            secTwo = Right(secondTime, Len(secondTime) - totalLen)
+            main.Worksheets("Report").Range("AC2").Value = secOne
+            main.Worksheets("Report").Range("AC2").NumberFormat = "0.00"
+            main.Worksheets("Report").Range("AC3").Value = secTwo
+            main.Worksheets("Report").Range("AC3").NumberFormat = "0.00"
+            secDiff = main.Worksheets("Report").Range("AC2").Value - main.Worksheets("Report").Range("AC3").Value
+            totSec = Abs(secDiff)
+            If totSec < 1 Then
+                main.Worksheets("Report").Cells(i + 1, 27).Value = Format(totSec, "hh:mm:ss")
+            Else
+                main.Worksheets("Report").Cells(i + 1, 27).Value = Format(totSec, "dd:hh:mm:ss")
+            End If
+        End If
+    End If
+Next i
+
+Columns("AC:AC").ClearContents
+Columns("AA:AA").Cut
+Columns("R:R").Insert Shift:=xlToRight
+
+
+End Sub
+
+Private Sub MoveCols()
+
+Set main = ThisWorkbook
+
+main.Worksheets("Report").Range("O:O, P:P, S:S, T:T, X:X, Y:Y").EntireColumn.Delete
+
+End Sub
+
+Private Sub EndResult()
+
+Set main = ThisWorkbook
+Dim lastrow As Long
+Dim lastrow2 As Long
+Dim serLen As Long
+Dim passfailCol As Long
+Dim serialsCol As Long
+Dim count As Long
+lastrow = Sheets("Report").Cells(Rows.count, 2).End(xlUp).Row
+serLen = Len(main.Worksheets("MT Ready Data").Range("A2").Value)
+
+'Make column for serials with repeats
+For i = 2 To lastrow
+    main.Worksheets("Report").Range("AB" & i).Value = Left(main.Worksheets("Report").Range("B" & i).Value, serLen + 3)
+Next i
+
+'Find pass/fail column
+For j = 1 To main.Worksheets("Report").UsedRange.Columns.count
+    If InStr(1, main.Worksheets("Report").Cells(1, j).Value, "Pass") > 0 Then
+        passfailCol = j
+        Exit For
+    End If
+Next j
+
+'Find serials column
+For k = 1 To main.Worksheets("Report").UsedRange.Columns.count
+    If InStr(1, main.Worksheets("Report").Cells(1, k).Value, "Serials") > 0 Then
+        serialsCol = k
+        Exit For
+    End If
+Next k
+
+main.Worksheets("Report").Range("AC1").Value = "Result"
+lastrow2 = Sheets("Report").Cells(Rows.count, serialsCol).End(xlUp).Row
+
+For l = 2 To lastrow2
+    count = Application.WorksheetFunction.CountIfs(main.Worksheets("Report").Range("AB:AB"), _
+        "=" & main.Worksheets("Report").Cells(l, serialsCol), main.Worksheets("Report").Columns(passfailCol), _
+        "=" & "Pass")
+    If count > 0 Then
+        main.Worksheets("Report").Range("AC" & l).Value = "P"
+    Else
+        main.Worksheets("Report").Range("AC" & l).Value = "F"
+    End If
+    
+Next l
+
+main.Worksheets("Report").Range("AC:AC").Cut
+Columns(serialsCol + 2).Insert Shift:=xlToRight
+
+
+For k = 1 To main.Worksheets("Report").UsedRange.Columns.count
+    If InStr(1, main.Worksheets("Report").Cells(1, k).Value, "Result") > 0 Then
+        resultCol = k
+        Exit For
+    End If
+Next k
+
+
+For m = 2 To lastrow2
+    serialTries = main.Worksheets("Report").Cells(m, resultCol - 1).Value
+    If serialTries = fibers Then
+        If main.Worksheets("Report").Cells(m, resultCol).Value = "P" Then
+            main.Worksheets("Report").Cells(m, resultCol + 1).Value = "Y"
+        Else
+            main.Worksheets("Report").Cells(m, resultCol + 1).Value = "N"
+        End If
+    Else
+        main.Worksheets("Report").Cells(m, resultCol + 1).Value = "N"
+    End If
+Next m
+
+
+main.Worksheets("Report").Range("AB:AB, AC:AC").ClearContents
+
+
+For k = 1 To main.Worksheets("Report").UsedRange.Columns.count
+    If InStr(1, main.Worksheets("Report").Cells(1, k).Value, "%") > 0 Then
+        lastCol = k
+        Exit For
+    End If
+Next k
+
+main.Worksheets("Report").Cells(1, lastCol + 3).Value = "# of Fibers"
+main.Worksheets("Report").Cells(2, lastCol + 3).Value = "IL Spec"
+main.Worksheets("Report").Cells(3, lastCol + 3).Value = "RL Spec"
+main.Worksheets("Report").Cells(2, lastCol + 3).Font.Bold = True
+main.Worksheets("Report").Cells(3, lastCol + 3).Font.Bold = True
+
+main.Worksheets("Report").Cells(1, lastCol + 4).Value = fibers
+main.Worksheets("Report").Cells(1, lastCol + 4).Font.Bold = False
+main.Worksheets("Report").Cells(2, lastCol + 4).Value = IL
+main.Worksheets("Report").Cells(3, lastCol + 4).Value = RL
+
+
+End Sub
+
+
+
+
+     
+   
